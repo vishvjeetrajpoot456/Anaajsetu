@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Sprout, 
   PlusCircle, 
@@ -18,12 +18,21 @@ import {
 } from 'lucide-react';
 import { mockCrops, fpoHubs, AgmarknetLiveRates } from '../data/mockData';
 import { calculateFairPrice, generateDemandForecast } from '../services/aiPricingService';
+import { fetchCropsFromDB, createCropInDB } from '../services/apiService';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export default function FarmerPortal({ onOpenQualityScanner, onOpenUssd }) {
   const [userListings, setUserListings] = useState(mockCrops);
   const [selectedCropDemand, setSelectedCropDemand] = useState('Sharbati Golden Wheat');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  useEffect(() => {
+    fetchCropsFromDB().then(data => {
+      if (data && data.length > 0) {
+        setUserListings(data);
+      }
+    });
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -48,39 +57,34 @@ export default function FarmerPortal({ onOpenQualityScanner, onOpenUssd }) {
     setAiPriceSuggestion(calculation);
   };
 
-  const handleAddProduce = (e) => {
+  const handleAddProduce = async (e) => {
     e.preventDefault();
     const finalPrice = aiPriceSuggestion ? aiPriceSuggestion.finalConsumerPrice : formData.agmarknetPrice * 1.2;
     const newCrop = {
-      id: `crop-${Date.now()}`,
       name: formData.name || 'Organic Fresh Batch',
       hindiName: 'जैविक फसल',
       category: formData.category,
       variety: 'Standard Grade',
       location: formData.location,
       fpoName: formData.fpoName,
-      farmerName: 'You (Farmer / FPO)',
-      farmerRating: 5.0,
-      farmerImage: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?w=200&auto=format&fit=crop&q=80',
-      image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=600&auto=format&fit=crop&q=80',
       availableQtyKg: Number(formData.availableQtyKg),
-      minOrderKg: 50,
-      unit: 'kg',
       grade: formData.grade,
-      harvestDate: new Date().toISOString().split('T')[0],
       farmerEarnings: aiPriceSuggestion ? aiPriceSuggestion.recommendedFarmerEarning : formData.agmarknetPrice * 1.2,
-      logisticsCost: 3.5,
-      platformFee: 1.5,
       anaajSetuPrice: finalPrice,
       agmarknetBasePrice: Number(formData.agmarknetPrice),
-      traditionalRetailPrice: formData.agmarknetPrice * 2.0,
-      organic: formData.organic,
-      demandStatus: 'High Demand'
+      organic: formData.organic
     };
 
-    setUserListings([newCrop, ...userListings]);
+    // Save to Database via REST API
+    const result = await createCropInDB(newCrop);
+    if (result && result.crop) {
+      setUserListings([result.crop, ...userListings]);
+    } else {
+      setUserListings([{ ...newCrop, id: `crop-${Date.now()}` }, ...userListings]);
+    }
+
     setShowAddForm(false);
-    alert('✅ Produce batch successfully listed on AnaajSetu! Aggregation pickup scheduled at nearest FPO Hub.');
+    alert('✅ Produce batch successfully saved to AnaajSetu REST API Database!');
   };
 
   const demandData = generateDemandForecast(selectedCropDemand);
